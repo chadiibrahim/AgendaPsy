@@ -1,5 +1,5 @@
 /* Offline cache for the installable web version. Bump CACHE when files change. */
-const CACHE = 'agenda-psy-v3';
+const CACHE = 'agenda-psy-v4';
 const FILES = ['./', 'index.html', 'style.css', 'xlsx.mini.min.js', 'i18n-fr.js', 'core.js', 'pdf.js', 'files.js', 'views.js', 'main.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', e => { e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE).map(k => caches.delete(k)))).then(() => self.clients.claim())); });

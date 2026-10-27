@@ -267,12 +267,28 @@ function patientOptions(selectedId) {
   return [['', t('Choose…')], ...pats.map(p => [p.id, pname(p)])];
 }
 
+/* type part of a name to filter the patient list (all words must match) */
+function patientSearchHtml() { return `<label class="fld"><span>${esc(t('Search patient'))}</span><input type="search" data-psearch placeholder="${esc(t('Type part of the name…'))}" autocomplete="off" autocapitalize="off" enterkeyhint="search"></label>`; }
+function wirePatientSearch(f, el) {
+  const s = f.pid, input = $('[data-psearch]', el); if (!s || !input) return;
+  const all = [...s.options].map(o => [o.value, o.textContent]);
+  input.oninput = () => {
+    const words = normStr(input.value.trim()).split(/\s+/).filter(Boolean), cur = s.value;
+    const m = words.length ? all.filter(([v, l]) => v && words.every(w => normStr(l).includes(w))) : all.filter(x => x[0]);
+    const opts = !words.length ? all : m.length === 1 ? m : [['', m.length ? t('Choose…') : t('No match')], ...m];
+    s.innerHTML = opts.map(([v, l]) => `<option value="${esc(v)}">${esc(l)}</option>`).join('');
+    const want = words.length && m.length === 1 ? m[0][0] : (opts.some(x => x[0] === cur) ? cur : '');
+    s.value = want;
+    if (want !== cur) s.dispatchEvent(new Event('change'));
+  };
+}
+
 function apptForm(o = {}) {
   const a = o.id ? db.appointments.find(x => x.id === o.id) : null;
   if (!a && !db.patients.length) { toast(t('Add a patient first')); return; }
   const v = a || { pid: o.pid || '', date: o.date || todayStr(), time: o.time || '10:00', dur: db.settings.dur, fee: o.pid ? lastFeeOf(o.pid) : num(db.settings.fee), status: 'scheduled', note: '' };
   const html = `<form id="f" autocomplete="off">
-    ${fld(t('Patient'), sel('pid', patientOptions(v.pid), v.pid, 'required'))}
+    ${patientSearchHtml()}${fld(t('Patient'), sel('pid', patientOptions(v.pid), v.pid, 'required'))}
     <div class="grid2">${fld(t('Date'), inp('date', v.date, 'type="date" required'))}${fld(t('Time'), inp('time', v.time, 'type="time" required'))}</div>
     <div class="grid2">${fld(t('Duration (min)'), inp('dur', v.dur, 'type="number" min="5" step="5" inputmode="numeric"'))}${fld(t('Fee'), inp('fee', v.fee, 'type="number" min="0" step="any" inputmode="decimal"'))}</div>
     ${a ? fld(t('Status'), sel('status', ['scheduled', 'done', 'cancelled', 'noshow'].map(s => [s, statusLabel(s)]), v.status)) : ''}
@@ -282,6 +298,7 @@ function apptForm(o = {}) {
   openSheet(a ? t('Edit appointment') : t('New appointment'), html, el => {
     const f = $('#f', el);
     $('[data-cancel]', el).onclick = () => closeOverlay(el);
+    wirePatientSearch(f, el);
     if (!a) f.pid.onchange = () => { if (f.pid.value) f.fee.value = lastFeeOf(f.pid.value); };
     f.onsubmit = e => {
       e.preventDefault();
@@ -335,7 +352,7 @@ function sessionForm(o = {}) {
   if (!s && !db.patients.length) { toast(t('Add a patient first')); return; }
   const v = s || { pid: o.pid || '', aid: o.aid || '', date: o.date || todayStr(), time: o.time || '', topic: '', notes: '', plan: '', fee: o.fee !== undefined ? o.fee : (o.pid ? lastFeeOf(o.pid) : num(db.settings.fee)) };
   const html = `<form id="f" autocomplete="off">
-    ${fld(t('Patient'), sel('pid', patientOptions(v.pid), v.pid, 'required'))}
+    ${patientSearchHtml()}${fld(t('Patient'), sel('pid', patientOptions(v.pid), v.pid, 'required'))}
     <div id="hint"></div>
     <div class="grid2">${fld(t('Date'), inp('date', v.date, 'type="date" required'))}${fld(t('Fee'), inp('fee', v.fee, 'type="number" min="0" step="any" inputmode="decimal"'))}</div>
     ${fld(t('Topic'), inp('topic', v.topic))}
@@ -349,6 +366,7 @@ function sessionForm(o = {}) {
       $('#hint', el).innerHTML = prev ? `<div class="hintbox"><b>${esc(t('Last plan / tasks'))}</b> (${esc(fmtDateS(prev.date))})<br>${esc(prev.plan)}</div>` : '';
     };
     hint();
+    wirePatientSearch(f, el);
     f.pid.onchange = () => { hint(); if (!s && f.pid.value) f.fee.value = lastFeeOf(f.pid.value); };
     $('[data-cancel]', el).onclick = () => closeOverlay(el);
     const del = $('[data-del]', el);
@@ -372,13 +390,14 @@ function paymentForm(o = {}) {
   const pid0 = x ? x.pid : (o.pid || '');
   const v = x || { pid: pid0, date: todayStr(), amount: pid0 && balanceOf(pid0) > 0 ? balanceOf(pid0) : '', method: 'cash', note: '' };
   const html = `<form id="f" autocomplete="off">
-    ${fld(t('Patient'), sel('pid', patientOptions(v.pid), v.pid, 'required'))}
+    ${patientSearchHtml()}${fld(t('Patient'), sel('pid', patientOptions(v.pid), v.pid, 'required'))}
     <div class="grid2">${fld(t('Date'), inp('date', v.date, 'type="date" required'))}${fld(t('Amount'), inp('amount', v.amount, 'type="number" step="any" inputmode="decimal" required'))}</div>
     ${fld(t('Method'), sel('method', ['cash', 'card', 'transfer', 'other'].map(m => [m, methodLabel(m)]), v.method))}
     ${fld(t('Note'), inp('note', v.note))}
     <div class="row end">${x ? `<button type="button" class="btn danger" data-del>${esc(t('Delete'))}</button>` : ''}<button type="button" class="btn" data-cancel>${esc(t('Cancel'))}</button><button class="btn primary">${esc(t('Save'))}</button></div></form>`;
   openSheet(x ? t('Edit payment') : t('New payment'), html, el => {
     const f = $('#f', el);
+    wirePatientSearch(f, el);
     if (!x) f.pid.onchange = () => { const b = f.pid.value ? balanceOf(f.pid.value) : 0; f.amount.value = b > 0 ? b : ''; };
     $('[data-cancel]', el).onclick = () => closeOverlay(el);
     const del = $('[data-del]', el);

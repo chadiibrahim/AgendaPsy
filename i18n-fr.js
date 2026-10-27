@@ -58,7 +58,7 @@ const FR = {
   "Cancel appointment": "Annuler le RDV", "Set as scheduled": "Remettre à « prévu »", "Edit / reschedule": "Modifier / déplacer", "Call": "Appeler",
   "Delete this appointment?": "Supprimer ce rendez-vous ?", "Choose…": "Choisir…", "Add a patient first": "Ajoutez d’abord un patient",
   "Repeat weekly for N more weeks": "Répéter chaque semaine pendant N semaines de plus", "Save": "Enregistrer",
-  "Edit appointment": "Modifier le rendez-vous", "New appointment": "Nouveau rendez-vous", "Choose a patient": "Choisissez un patient", "Saved": "Enregistré",
+  "Edit appointment": "Modifier le rendez-vous", "New appointment": "Nouveau rendez-vous", "Search patient": "Rechercher un patient", "Type part of the name…": "Tapez une partie du nom…", "No match": "Aucun résultat", "Choose a patient": "Choisissez un patient", "Saved": "Enregistré",
   "This overlaps with {0} at {1}. Save anyway?": "Chevauchement avec {0} à {1}. Enregistrer quand même ?", "Save anyway": "Enregistrer quand même",
   "Edit patient": "Modifier le patient", "New patient": "Nouveau patient", "Enter a name": "Saisissez un nom",
   "Edit session note": "Modifier la note de séance", "New session note": "Nouvelle note de séance", "Last plan / tasks": "Dernier plan / tâches",
