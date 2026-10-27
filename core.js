@@ -47,6 +47,13 @@ function load() {
   return defaults();
 }
 let db = load();
+/* a 'done' appointment always has a session carrying its fee, so it is billed */
+function ensureSession(a) {
+  if (a.status !== 'done' || db.sessions.some(s => s.aid === a.id)) return false;
+  db.sessions.push({ id: uid(), pid: a.pid, date: a.date, time: a.time || '', aid: a.id, topic: '', notes: '', plan: '', fee: num(a.fee) });
+  return true;
+}
+(function () { if (db.settings.doneSync) return; let ch = false; db.appointments.forEach(a => { if (ensureSession(a)) ch = true; }); db.settings.doneSync = true; try { save(); } catch (e) { } })();
 let saveFailed = false;
 function save() {
   try { localStorage.setItem(KEY, JSON.stringify(db)); saveFailed = false; return true; }

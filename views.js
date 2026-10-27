@@ -290,8 +290,8 @@ function apptForm(o = {}) {
       const rec = { pid: d.pid, date: d.date, time: d.time, dur: parseInt(d.dur) || db.settings.dur, fee: num(d.fee), note: (d.note || '').trim(), status: d.status || 'scheduled' };
       const clash = db.appointments.find(x => (!a || x.id !== a.id) && x.date === rec.date && x.status !== 'cancelled' && toMin(x.time) < toMin(rec.time) + rec.dur && toMin(rec.time) < toMin(x.time) + x.dur);
       const go = () => {
-        if (a) Object.assign(a, rec);
-        else { const n = Math.min(52, parseInt(d.rep) || 0); for (let i = 0; i <= n; i++) db.appointments.push({ id: uid(), ...rec, date: addDays(rec.date, 7 * i) }); }
+        if (a) { Object.assign(a, rec); ensureSession(a); }
+        else { const n = Math.min(52, parseInt(d.rep) || 0); for (let i = 0; i <= n; i++) { const na = { id: uid(), ...rec, date: addDays(rec.date, 7 * i) }; db.appointments.push(na); ensureSession(na); } }
         save(); closeOverlay(el); S.calDay = rec.date; S.calMonth = rec.date.slice(0, 7); refresh(); toast(t('Saved'));
       };
       if (clash && rec.status !== 'cancelled') confirmBox(t('This overlaps with {0} at {1}. Save anyway?', pname(P(clash.pid)), clash.time), { ok: t('Save anyway'), danger: false }).then(ok => ok && go());
