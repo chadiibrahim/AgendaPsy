@@ -236,16 +236,23 @@ function viewStats(v) {
 }
 
 /* ===================== APPOINTMENT ===================== */
+const nsSession = a => db.sessions.find(s => s.aid === a.id && s.noshow);
+function dropNoShow(a) { db.sessions = db.sessions.filter(s => !(s.aid === a.id && s.noshow)); }
+function setNoShow(a, charge) {
+  dropNoShow(a); a.status = 'noshow';
+  if (charge) db.sessions.push({ id: uid(), pid: a.pid, date: a.date, time: a.time || '', aid: a.id, topic: t('No-show (charged)'), notes: '', plan: '', fee: num(a.fee), noshow: true });
+}
 function openAppt(id) {
   const a = db.appointments.find(x => x.id === id); if (!a) return;
   const p = P(a.pid), ses = db.sessions.find(s => s.aid === a.id);
   const html = `
     <div class="apptdetail"><button class="link" data-pat>${esc(pname(p))}</button>
       <div>${esc(fmtDate(a.date))} · ${esc(a.time)}–${esc(addMin(a.time, a.dur))}</div>
-      <div>${statusBadge(a.status)}${a.fee ? ' · ' + esc(money(a.fee)) : ''}</div>${a.note ? `<p class="note">${esc(a.note)}</p>` : ''}</div>
+      <div>${statusBadge(a.status)}${a.fee ? ' · ' + esc(money(a.fee)) : ''}${a.status === 'noshow' ? ' · ' + esc(nsSession(a) ? t('charged') : t('not charged')) : ''}</div>${a.note ? `<p class="note">${esc(a.note)}</p>` : ''}</div>
     <div class="grid2">
       ${a.status === 'done' && ses ? `<button class="btn primary" data-ses>${esc(t('Open session note'))}</button>` : `<button class="btn primary" data-done>${icon('check', 18)} ${esc(a.status === 'done' ? t('Add session note') : t('Done + session note'))}</button>`}
-      ${a.status !== 'noshow' ? `<button class="btn" data-st="noshow">${esc(t('No-show'))}</button>` : ''}
+      ${a.status !== 'noshow' || nsSession(a) ? `<button class="btn" data-ns="0">${esc(a.status === 'noshow' ? t('Remove the charge') : t('No-show · don’t charge'))}</button>` : ''}
+      ${a.status !== 'noshow' || !nsSession(a) ? `<button class="btn" data-ns="1">${esc(a.status === 'noshow' ? t('Charge this no-show') : t('No-show · charge'))}</button>` : ''}
       ${a.status !== 'cancelled' ? `<button class="btn" data-st="cancelled">${esc(t('Cancel appointment'))}</button>` : ''}
       ${a.status !== 'scheduled' ? `<button class="btn" data-st="scheduled">${esc(t('Set as scheduled'))}</button>` : ''}
       <button class="btn" data-edit>${icon('edit', 18)} ${esc(t('Edit / reschedule'))}</button>
@@ -256,9 +263,10 @@ function openAppt(id) {
     const pat = $('[data-pat]', el); if (p) pat.onclick = () => patientPage(p.id);
     const done = $('[data-done]', el); if (done) done.onclick = () => { closeOverlay(el); sessionForm({ pid: a.pid, aid: a.id, date: a.date, time: a.time, fee: a.fee }); };
     const so = $('[data-ses]', el); if (so) so.onclick = () => { closeOverlay(el); sessionForm({ id: ses.id }); };
-    $$('[data-st]', el).forEach(b => b.onclick = () => { a.status = b.dataset.st; save(); closeOverlay(el); refresh(); });
+    $$('[data-ns]', el).forEach(b => b.onclick = () => { setNoShow(a, b.dataset.ns === '1'); save(); closeOverlay(el); refresh(); });
+    $$('[data-st]', el).forEach(b => b.onclick = () => { a.status = b.dataset.st; dropNoShow(a); save(); closeOverlay(el); refresh(); });
     $('[data-edit]', el).onclick = () => { closeOverlay(el); apptForm({ id: a.id }); };
-    $('[data-del]', el).onclick = async () => { if (!await confirmBox(t('Delete this appointment?'))) return; db.appointments = db.appointments.filter(x => x.id !== a.id); db.sessions.forEach(s => { if (s.aid === a.id) s.aid = ''; }); save(); closeOverlay(el); refresh(); };
+    $('[data-del]', el).onclick = async () => { if (!await confirmBox(t('Delete this appointment?'))) return; db.appointments = db.appointments.filter(x => x.id !== a.id); dropNoShow(a); db.sessions.forEach(s => { if (s.aid === a.id) s.aid = ''; }); db.appointments = db.appointments.filter(x => x.id !== a.id); save(); closeOverlay(el); refresh(); };
   });
 }
 const lastFeeOf = pid => { const s = db.sessions.filter(x => x.pid === pid).sort(byDateTime).pop(); return s ? num(s.fee) : num(db.settings.fee); };
@@ -307,7 +315,7 @@ function apptForm(o = {}) {
       const rec = { pid: d.pid, date: d.date, time: d.time, dur: parseInt(d.dur) || db.settings.dur, fee: num(d.fee), note: (d.note || '').trim(), status: d.status || 'scheduled' };
       const clash = db.appointments.find(x => (!a || x.id !== a.id) && x.date === rec.date && x.status !== 'cancelled' && toMin(x.time) < toMin(rec.time) + rec.dur && toMin(rec.time) < toMin(x.time) + x.dur);
       const go = () => {
-        if (a) { Object.assign(a, rec); ensureSession(a); }
+        if (a) { Object.assign(a, rec); if (a.status !== 'noshow') dropNoShow(a); ensureSession(a); }
         else { const n = Math.min(52, parseInt(d.rep) || 0); for (let i = 0; i <= n; i++) { const na = { id: uid(), ...rec, date: addDays(rec.date, 7 * i) }; db.appointments.push(na); ensureSession(na); } }
         save(); closeOverlay(el); S.calDay = rec.date; S.calMonth = rec.date.slice(0, 7); refresh(); toast(t('Saved'));
       };
