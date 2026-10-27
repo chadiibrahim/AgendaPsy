@@ -1,0 +1,31 @@
+AGENDA PSY - VERSION WEB (installable sur Android, fonctionne hors ligne)
+
+1) HEBERGER LES FICHIERS (une seule fois)
+   Le dossier contient uniquement l'application, aucune donnee de patient.
+   Il faut une adresse en https. Options gratuites :
+   - Netlify Drop : app.netlify.com/drop, glisser-deposer ce dossier
+   - GitHub Pages ou Cloudflare Pages : creer un depot/projet public contenant ces fichiers
+   L'adresse obtenue est ensuite a ouvrir sur le telephone.
+
+2) INSTALLER SUR LE TELEPHONE
+   Ouvrir l'adresse dans Chrome (Android) > menu (3 points) > "Installer l'application"
+   ou "Ajouter a l'ecran d'accueil". L'app s'ouvre ensuite comme une application normale,
+   meme sans internet. Au premier lancement : choisir un code PIN.
+
+3) OU SONT LES DONNEES ?
+   Uniquement dans le navigateur de CE telephone. Elles sont perdues si vous videz les donnees
+   de Chrome / du site, ou si vous desinstallez l'application. D'ou la sauvegarde :
+
+4) SAUVEGARDE (Reglages > Sauvegarde)
+   - Rappel : jamais / chaque semaine / toutes les 2 semaines / chaque mois
+   - "Sauvegarder et partager" : ouvre le menu Android (WhatsApp, Drive, e-mail, Telegram...)
+   - "Enregistrer sur le telephone" : fichier dans Telechargements
+   - Chiffrement optionnel par mot de passe (a conserver : sans lui, la sauvegarde est illisible)
+   - "Restaurer une sauvegarde" : choisir le fichier (fonctionne aussi sur un autre telephone)
+   Une sauvegarde ne contient pas le PIN : sur un nouveau telephone, choisir un PIN puis restaurer.
+
+5) MISE A JOUR
+   Remplacer les fichiers sur l'hebergeur, puis rouvrir l'application deux fois (la 2e ouverture
+   charge la nouvelle version). Les donnees sont conservees.
+
+Note : sur la version web, les exports Excel et PDF sont telecharges dans le dossier Telechargements.

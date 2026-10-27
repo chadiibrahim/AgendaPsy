@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2b7a74">
+<meta name="color-scheme" content="light">
+<meta name="robots" content="noindex,nofollow">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Agenda Psy</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app" hidden>
+  <header class="top">
+    <h1 id="title"></h1>
+    <button id="btnLock" class="icon-btn" type="button"></button>
+    <button id="btnSettings" class="icon-btn" type="button"></button>
+  </header>
+  <main id="view"></main>
+  <nav class="tabs" id="tabs"></nav>
+  <button id="fab" class="fab" type="button" hidden></button>
+</div>
+<div id="lock" class="lock"></div>
+<div id="layer"></div>
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="xlsx.mini.min.js"></script>
+<script src="i18n-fr.js"></script>
+<script src="core.js"></script>
+<script src="pdf.js"></script>
+<script src="files.js"></script>
+<script src="views.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
