@@ -1,6 +1,6 @@
 'use strict';
 /* ===================== app state & shell ===================== */
-const S = { tab: 'today', calMonth: todayStr().slice(0, 7), calDay: todayStr(), pq: '', pf: 'active' };
+const S = { bq: '', tab: 'today', calMonth: todayStr().slice(0, 7), calDay: todayStr(), pq: '', pf: 'active' };
 const TABS = () => [['today', 'today', t('Today')], ['calendar', 'calendar', t('Calendar')], ['patients', 'users', t('Patients')], ['billing', 'money', t('Billing')], ['stats', 'chart', t('Stats')]];
 
 function renderTabs() {
@@ -173,21 +173,37 @@ function patientPage(pid) {
 }
 
 /* ===================== BILLING ===================== */
+/* name (all words, accent-insensitive) or phone digits */
+function matchNamePhone(p, raw) {
+  const q = normStr(raw).trim(); if (!q) return true; if (!p) return false;
+  const name = normStr(pname(p)), qd = q.replace(/\D/g, '');
+  if (q.split(/\s+/).every(w => name.includes(w))) return true;
+  return qd.length >= 2 && /^[\d\s+().-]+$/.test(q) && String(p.phone || '').replace(/\D/g, '').includes(qd);
+}
 function viewBilling(v) {
   const ym = todayStr().slice(0, 7);
   const recv = round2(db.payments.filter(x => x.date.startsWith(ym)).reduce((s, x) => s + num(x.amount), 0));
   const billed = round2(db.sessions.filter(x => x.date.startsWith(ym)).reduce((s, x) => s + num(x.fee), 0));
-  const rows = db.patients.map(p => ({ p, b: balanceOf(p.id) })).filter(x => Math.abs(x.b) >= 0.005).sort((a, b) => b.b - a.b);
-  const owed = round2(rows.filter(x => x.b > 0).reduce((s, x) => s + x.b, 0));
-  const pays = [...db.payments].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 15);
+  const owedAll = round2(db.patients.map(p => balanceOf(p.id)).filter(b => b > 0.005).reduce((s, b) => s + b, 0));
   v.innerHTML = `
-    <div class="tiles card pad"><div><small>${esc(t('Owed to you'))}</small><b class="${owed > 0 ? 'owe' : ''}">${esc(money(owed))}</b></div><div><small>${esc(t('Received this month'))}</small><b>${esc(money(recv))}</b></div><div><small>${esc(t('Billed this month'))}</small><b>${esc(money(billed))}</b></div></div>
+    <div class="tiles card pad"><div><small>${esc(t('Owed to you'))}</small><b class="${owedAll > 0 ? 'owe' : ''}">${esc(money(owedAll))}</b></div><div><small>${esc(t('Received this month'))}</small><b>${esc(money(recv))}</b></div><div><small>${esc(t('Billed this month'))}</small><b>${esc(money(billed))}</b></div></div>
+    <div class="searchbar">${icon('search', 18)}<input id="bq" type="search" placeholder="${esc(t('Search name or phone…'))}" value="${esc(S.bq || '')}" autocomplete="off"></div>
     <div class="row"><button class="btn sm" id="bpdf">${icon('file', 16)} ${esc(t('Balances PDF'))}</button></div>
-    <section><h3>${esc(t('Balances'))}</h3>${rows.length ? rows.map(x => `<button class="card item" data-p="${x.p.id}"><div class="grow"><div class="nm">${esc(pname(x.p))}</div><div class="sub">${esc(t('Billed'))} ${esc(money(billedOf(x.p.id)))} · ${esc(t('Paid'))} ${esc(money(paidOf(x.p.id)))}</div></div><div class="amt ${x.b > 0 ? 'owe' : 'ok'}">${esc(money(x.b))}</div></button>`).join('') : `<div class="empty">${esc(t('All accounts are settled.'))}</div>`}</section>
-    <section><h3>${esc(t('Recent payments'))}</h3>${pays.length ? pays.map(x => `<button class="card item" data-pay-id="${x.id}"><div class="grow"><div class="nm">${esc(pname(P(x.pid)))}</div><div class="sub">${esc(fmtDate(x.date))} · ${esc(methodLabel(x.method))}</div></div><div class="amt ok">${esc(money(num(x.amount)))}</div></button>`).join('') : `<div class="empty">${esc(t('No payments yet.'))}</div>`}</section>`;
+    <div id="blist"></div>`;
+  const draw = () => {
+    const q = S.bq || '';
+    const rows = db.patients.filter(p => matchNamePhone(p, q)).map(p => ({ p, b: balanceOf(p.id) })).filter(x => Math.abs(x.b) >= 0.005).sort((a, b) => b.b - a.b);
+    const all = [...db.payments].filter(x => matchNamePhone(P(x.pid), q)).sort((a, b) => b.date.localeCompare(a.date));
+    const pays = all.slice(0, q.trim() ? 60 : 15);
+    $('#blist', v).innerHTML = `
+    <section><h3>${esc(t('Balances'))}</h3>${rows.length ? rows.map(x => `<button class="card item" data-p="${x.p.id}"><div class="grow"><div class="nm">${esc(pname(x.p))}</div><div class="sub">${esc(t('Billed'))} ${esc(money(billedOf(x.p.id)))} · ${esc(t('Paid'))} ${esc(money(paidOf(x.p.id)))}</div></div><div class="amt ${x.b > 0 ? 'owe' : 'ok'}">${esc(money(x.b))}</div></button>`).join('') : `<div class="empty">${esc(q.trim() ? t('No match.') : t('All accounts are settled.'))}</div>`}</section>
+    <section><h3>${esc(t('Recent payments'))}</h3>${pays.length ? pays.map(x => `<button class="card item" data-pay-id="${x.id}"><div class="grow"><div class="nm">${esc(pname(P(x.pid)))}</div><div class="sub">${esc(fmtDate(x.date))} · ${esc(methodLabel(x.method))}</div></div><div class="amt ok">${esc(money(num(x.amount)))}</div></button>`).join('') : `<div class="empty">${esc(q.trim() ? t('No match.') : t('No payments yet.'))}</div>`}</section>`;
+    $$('[data-p]', v).forEach(b => b.onclick = () => patientPage(b.dataset.p));
+    $$('[data-pay-id]', v).forEach(b => b.onclick = () => paymentForm({ id: b.dataset['payId'] }));
+  };
+  $('#bq', v).oninput = e => { S.bq = e.target.value; draw(); };
   $('#bpdf', v).onclick = pdfBalances;
-  $$('[data-p]', v).forEach(b => b.onclick = () => patientPage(b.dataset.p));
-  $$('[data-pay-id]', v).forEach(b => b.onclick = () => paymentForm({ id: b.dataset['payId'] }));
+  draw();
 }
 
 /* ===================== STATS ===================== */
