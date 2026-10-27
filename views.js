@@ -12,7 +12,7 @@ function render() {
   const v = $('#view');
   renderTabs();
   $('#title').textContent = ({ today: t('Today'), calendar: t('Calendar'), patients: t('Patients'), billing: t('Billing'), stats: t('Statistics') })[S.tab];
-  $('#btnLock').setAttribute('aria-label', t('Lock')); $('#btnSettings').setAttribute('aria-label', t('Settings'));
+  $('#btnVoice').setAttribute('aria-label', t('Voice command')); $('#btnLock').setAttribute('aria-label', t('Lock')); $('#btnSettings').setAttribute('aria-label', t('Settings'));
   const fab = $('#fab');
   fab.hidden = S.tab === 'stats';
   fab.setAttribute('aria-label', t('Add'));
@@ -139,7 +139,7 @@ function patientPage(pid) {
           <div class="muted">${p.dob ? esc(fmtDateS(p.dob)) + (ageOf(p.dob) !== '' ? ' · ' + ageOf(p.dob) + ' ' + esc(t('years')) : '') : ''}${p.status === 'archived' ? ` <span class="badge b-cancelled">${esc(t('Archived'))}</span>` : ''}</div>
           ${p.phone ? `<div class="contact"><a class="btn" href="${esc(telHref(p.phone))}">${icon('phone', 18)} ${esc(p.phone)}</a><a class="btn" href="${esc(waHref(p.phone))}" target="_blank" rel="noopener">${icon('msg', 18)} WhatsApp</a><a class="btn" href="${esc(smsHref(p.phone))}">SMS</a></div>` : ''}
           ${p.email ? `<div class="kv"><span>${esc(t('Email'))}</span><div><a href="mailto:${esc(p.email)}">${esc(p.email)}</a></div></div>` : ''}
-          ${kv(t('Address'), p.address)}${kv(t('Emergency contact'), p.emergency)}${kv(t('Medical history'), p.history)}${kv(t('General notes'), p.notes)}
+          ${hasFee(p.fee) ? kv(t('Patient fee'), money(p.fee)) : ''}${kv(t('Address'), p.address)}${kv(t('Emergency contact'), p.emergency)}${kv(t('Medical history'), p.history)}${kv(t('General notes'), p.notes)}
         </div>
         <div class="card pad"><div class="tiles"><div><small>${esc(t('Billed'))}</small><b>${esc(money(billedOf(pid)))}</b></div><div><small>${esc(t('Paid'))}</small><b>${esc(money(paidOf(pid)))}</b></div><div><small>${esc(t('Balance'))}</small><b class="${bal > 0.005 ? 'owe' : bal < -0.005 ? 'ok' : ''}">${esc(money(bal))}</b></div></div>
           <div class="row"><button class="btn primary" data-pay>${icon('plus', 18)} ${esc(t('Payment'))}</button><button class="btn" data-stm>${icon('file', 18)} ${esc(t('Statement PDF'))}</button></div></div>
@@ -269,7 +269,8 @@ function openAppt(id) {
     $('[data-del]', el).onclick = async () => { if (!await confirmBox(t('Delete this appointment?'))) return; db.appointments = db.appointments.filter(x => x.id !== a.id); dropNoShow(a); db.sessions.forEach(s => { if (s.aid === a.id) s.aid = ''; }); db.appointments = db.appointments.filter(x => x.id !== a.id); save(); closeOverlay(el); refresh(); };
   });
 }
-const lastFeeOf = pid => { const s = db.sessions.filter(x => x.pid === pid).sort(byDateTime).pop(); return s ? num(s.fee) : num(db.settings.fee); };
+const hasFee = x => x !== '' && x != null && isFinite(parseFloat(x));
+const lastFeeOf = pid => { const pp = P(pid); if (pp && hasFee(pp.fee)) return num(pp.fee); const s = db.sessions.filter(x => x.pid === pid).sort(byDateTime).pop(); return s ? num(s.fee) : num(db.settings.fee); };
 function patientOptions(selectedId) {
   const pats = sortedPatients(db.patients.filter(p => p.status !== 'archived' || p.id === selectedId));
   return [['', t('Choose…')], ...pats.map(p => [p.id, pname(p)])];
@@ -328,7 +329,7 @@ function apptForm(o = {}) {
 /* ===================== PATIENT FORM ===================== */
 function patientForm(id) {
   const p = id ? P(id) : null;
-  const v = p || { first: '', last: '', phone: '', dob: '', email: '', address: '', emergency: '', history: '', notes: '', status: 'active', created: todayStr() };
+  const v = p || { first: '', last: '', phone: '', dob: '', email: '', address: '', emergency: '', history: '', notes: '', fee: '', status: 'active', created: todayStr() };
   const html = `<form id="f" autocomplete="off">
     <div class="grid2">${fld(t('First name'), inp('first', v.first, 'autocapitalize="words"'))}${fld(t('Last name'), inp('last', v.last, 'autocapitalize="words"'))}</div>
     <div class="grid2">${fld(t('Phone'), inp('phone', v.phone, 'type="tel" inputmode="tel"'))}${fld(t('Date of birth'), inp('dob', v.dob, 'type="date"'))}</div>
@@ -337,6 +338,7 @@ function patientForm(id) {
     ${fld(t('Emergency contact'), inp('emergency', v.emergency))}
     ${fld(t('Medical history'), txa('history', v.history, 4))}
     ${fld(t('General notes'), txa('notes', v.notes, 4))}
+    ${fld(t('Patient fee (optional)'), inp('fee', hasFee(v.fee) ? v.fee : '', 'type="number" min="0" step="any" inputmode="decimal" placeholder="' + esc(t('Default fee') + ': ' + money(db.settings.fee)) + '"'))}
     <div class="grid2">${fld(t('File opened'), inp('created', v.created, 'type="date"'))}${p ? fld(t('Status'), sel('status', [['active', t('Active')], ['archived', t('Archived')]], v.status)) : ''}</div>
     <div class="row end"><button type="button" class="btn" data-cancel>${esc(t('Cancel'))}</button><button class="btn primary">${esc(t('Save'))}</button></div></form>`;
   openSheet(p ? t('Edit patient') : t('New patient'), html, el => {
@@ -347,7 +349,7 @@ function patientForm(id) {
       const d = formData(f);
       ['first', 'last', 'phone', 'email', 'address', 'emergency'].forEach(k => d[k] = (d[k] || '').trim());
       if (!d.first && !d.last) { toast(t('Enter a name')); return; }
-      const rec = { first: d.first, last: d.last, phone: d.phone, dob: d.dob || '', email: d.email, address: d.address, emergency: d.emergency, history: (d.history || '').trim(), notes: (d.notes || '').trim(), created: d.created || todayStr(), status: d.status || (p ? p.status : 'active') };
+      const rec = { first: d.first, last: d.last, phone: d.phone, dob: d.dob || '', email: d.email, address: d.address, emergency: d.emergency, history: (d.history || '').trim(), notes: (d.notes || '').trim(), fee: (d.fee || '').toString().trim() === '' ? '' : num(d.fee), created: d.created || todayStr(), status: d.status || (p ? p.status : 'active') };
       if (p) { Object.assign(p, rec); save(); closeOverlay(el); refresh(); toast(t('Saved')); }
       else { const np = { id: uid(), ...rec }; db.patients.push(np); save(); closeOverlay(el); refresh(); patientPage(np.id); }
     };
@@ -501,4 +503,99 @@ function changePinSheet() {
       await setPin(d.n1); closeOverlay(el); toast(t('PIN changed'));
     };
   });
+}
+
+
+/* ===================== VOICE / TEXT COMMAND ===================== */
+/* The phone keyboard's microphone dictates into a text box; this parses the text (FR + EN).
+   Nothing is saved or deleted without an on-screen confirmation. */
+const VDAYS = { dimanche: 0, lundi: 1, mardi: 2, mercredi: 3, jeudi: 4, vendredi: 5, samedi: 6, sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
+const VMONTHS = { janvier: 1, janv: 1, fevrier: 2, mars: 3, avril: 4, mai: 5, juin: 6, juillet: 7, aout: 8, septembre: 9, octobre: 10, novembre: 11, decembre: 12, january: 1, february: 2, march: 3, april: 4, may: 5, june: 6, july: 7, august: 8, september: 9, october: 10, november: 11, december: 12 };
+const VNUM = { un: 1, une: 1, deux: 2, trois: 3, quatre: 4, cinq: 5, six: 6, sept: 7, huit: 8, neuf: 9, dix: 10, onze: 11, douze: 12, treize: 13, quatorze: 14, quinze: 15, seize: 16, one: 1, two: 2, three: 3, four: 4, five: 5, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12 };
+const lev = (a, b) => { const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]); for (let j = 1; j <= b.length; j++) d[0][j] = j; for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1)); return d[a.length][b.length]; };
+
+function parseVoice(raw, today) {
+  today = today || todayStr();
+  let s = ' ' + normStr(raw).replace(/[’'`-]/g, ' ').replace(/[,;!?]/g, ' ').replace(/\.(?!\d)/g, ' ') + ' ';
+  s = s.replace(/\b([a-z]+)\s+(heures?|h|pm|am)\b/g, (m, w, u) => VNUM[w] ? VNUM[w] + ' ' + u : m);
+  const out = { norm: s, intent: 'create', date: '', time: '' };
+  if (/\b(supprim|efface|enleve|retire|delete|remove)\w*/.test(s)) out.intent = 'delete';
+  else if (/\b(annul|cancel)\w*/.test(s)) out.intent = 'cancel';
+  const wd = (today && parseYmd(today).getDay());
+  let m, rest = s;
+  const mons = Object.keys(VMONTHS).join('|'), days = Object.keys(VDAYS).join('|');
+  const yearFix = (y, mo, d, future) => { let dt = `${y}-${pad(mo)}-${pad(d)}`; if (future && dt < today) dt = `${y + 1}-${pad(mo)}-${pad(d)}`; return dt; };
+  const cy = +today.slice(0, 4), cm = +today.slice(5, 7), cd = +today.slice(8, 10), fut = out.intent === 'create';
+  if (/\bapres demain\b|\bday after tomorrow\b/.test(s)) out.date = addDays(today, 2);
+  else if (/\bdemain\b|\btomorrow\b/.test(s)) out.date = addDays(today, 1);
+  else if (/\baujourd hui\b|\btoday\b|\bce jour\b/.test(s)) out.date = today;
+  else if ((m = s.match(/\b(?:dans|in)\s+(\d+)\s+(jours?|semaines?|days?|weeks?)\b/))) out.date = addDays(today, +m[1] * (/^(s|w)/.test(m[2]) ? 7 : 1));
+  else if ((m = s.match(new RegExp('\\b(\\d{1,2})\\s*(?:er|st|nd|rd|th)?\\s+(?:de\\s+|of\\s+)?(' + mons + ')\\b(?:\\s+(\\d{4}))?')))) out.date = yearFix(+m[3] || cy, VMONTHS[m[2]], +m[1], fut && !m[3]);
+  else if ((m = s.match(new RegExp('\\b(' + mons + ')\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:\\s+(\\d{4}))?')))) out.date = yearFix(+m[3] || cy, VMONTHS[m[1]], +m[2], fut && !m[3]);
+  else if ((m = s.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/))) { let y = m[3] ? (+m[3] < 100 ? 2000 + +m[3] : +m[3]) : cy; out.date = yearFix(y, +m[2], +m[1], fut && !m[3]); }
+  else if ((m = s.match(/\b(?:le|the)\s+(\d{1,2})(?:er|st|nd|rd|th)?\b(?!\s*(?:h\b|heures?|:|am|pm))/)) && +m[1] >= 1 && +m[1] <= 31) { let mo = cm, y = cy; if (+m[1] < cd) { mo++; if (mo > 12) { mo = 1; y++; } } out.date = `${y}-${pad(mo)}-${pad(+m[1])}`; }
+  else if ((m = s.match(new RegExp('\\b(' + days + ')\\b')))) { let diff = (VDAYS[m[1]] - wd + 7) % 7; if (diff === 0) diff = 7; out.date = addDays(today, diff); }
+  if (out.date && isNaN(parseYmd(out.date).getTime())) out.date = '';
+  let h = null, mi = 0, mer = '';
+  if ((m = s.match(/\b(\d{1,2})\s*(?:h|heures?|:)\s*(\d{2})?\s*(am|pm)?(?![a-z])/))) { h = +m[1]; mi = +m[2] || 0; mer = m[3] || ''; }
+  else if ((m = s.match(/\b(\d{1,2})\s*(am|pm)\b/))) { h = +m[1]; mer = m[2]; }
+  else if (/\bmidi\b|\bnoon\b/.test(s)) { h = 12; mer = 'x'; }
+  if (h !== null) {
+    if (!mi && /\bet demie?\b|\bhalf past\b/.test(s)) mi = 30; else if (!mi && /\bet quart\b|\bquarter past\b/.test(s)) mi = 15;
+    if (mer === 'pm' && h < 12) h += 12; else if (mer === 'am' && h === 12) h = 0;
+    else if (!mer) { if (/\b(apres midi|soir|afternoon|evening|tonight)\b/.test(s) && h < 12) h += 12; else if (h >= 1 && h <= 7 && !/\b(matin|morning)\b/.test(s)) h += 12; }
+    if (h < 24 && mi < 60) out.time = `${pad(h)}:${pad(mi)}`;
+  }
+  return out;
+}
+function matchPatients(norm) {
+  const toks = [...new Set(norm.split(/[^a-z]+/).filter(w => w.length >= 2))];
+  const fuzzy = (t0, nw) => t0 === nw || (t0.length >= 4 && nw.startsWith(t0)) || (t0.length >= 5 && nw.length >= 5 && lev(t0, nw) <= (nw.length >= 8 ? 2 : 1));
+  const scored = db.patients.map(p => {
+    const nws = normStr(pname(p)).split(/[^a-z]+/).filter(w => w.length >= 2);
+    const hit = nws.filter(nw => toks.some(t0 => fuzzy(t0, nw))).length;
+    return { p, sc: hit ? hit - 0.01 * (nws.length - hit) - (p.status === 'archived' ? 0.005 : 0) : 0 };
+  }).filter(x => x.sc > 0);
+  const best = Math.max(0, ...scored.map(x => x.sc));
+  return scored.filter(x => x.sc === best).map(x => x.p);
+}
+function openVoice() {
+  const html = `<p class="muted">${esc(t('Tap the microphone on your keyboard, speak, then press Run. You always confirm before anything is saved or deleted.'))}</p>
+    <ul class="muted vex"><li>${esc(t('“Appointment with Marie Khoury next Tuesday at 3 pm”'))}</li><li>${esc(t('“Delete Karim’s appointment tomorrow”'))}</li><li>${esc(t('“Cancel Nour on the 14th at 10:30”'))}</li></ul>
+    <textarea id="vcmd" rows="3" placeholder="${esc(t('Say or type a command…'))}" autocapitalize="sentences"></textarea>
+    <div id="vres"></div>
+    <div class="row end"><button class="btn primary" id="vrun">${esc(t('Run'))}</button></div>`;
+  openSheet(t('Voice command'), html, el => {
+    const box = $('#vcmd', el), res = $('#vres', el);
+    setTimeout(() => box.focus(), 250);
+    $('#vrun', el).onclick = () => {
+      const txt = box.value.trim(); if (!txt) return;
+      const r = parseVoice(txt), c = matchPatients(r.norm);
+      const act = pid => { closeOverlay(el); voiceAct(r, pid); };
+      if (c.length === 1) act(c[0].id);
+      else if (c.length > 1) { res.innerHTML = `<p><b>${esc(t('Which patient?'))}</b></p><div class="stack">${c.slice(0, 8).map(p => `<button class="btn" data-pid="${esc(p.id)}">${esc(pname(p))}</button>`).join('')}</div>`; $$('[data-pid]', res).forEach(b => b.onclick = () => act(b.dataset.pid)); }
+      else if (r.intent === 'create') { closeOverlay(el); toast(t('Patient not recognised. Choose one.')); apptForm({ date: r.date || undefined, time: r.time || undefined }); }
+      else res.innerHTML = `<p class="muted">${esc(t('Patient not recognised. Choose one.'))}</p>`;
+    };
+  });
+}
+function voiceAct(r, pid) {
+  if (r.intent === 'create') { apptForm({ pid, date: r.date || undefined, time: r.time || undefined }); return; }
+  const td = todayStr();
+  const list = db.appointments.filter(a => a.pid === pid && (r.date ? a.date === r.date : a.date >= td) && (!r.time || a.time === r.time) && (r.intent === 'delete' || a.status !== 'cancelled')).sort(byDateTime);
+  if (!list.length) { toast(t('No matching appointment')); return; }
+  const doIt = async a => {
+    const line = `${pname(P(a.pid))} · ${fmtDate(a.date)} · ${a.time}`;
+    if (r.intent === 'delete') {
+      if (!await confirmBox(t('Delete this appointment?') + '\n' + line)) return;
+      db.appointments = db.appointments.filter(x => x.id !== a.id); dropNoShow(a); db.sessions.forEach(s => { if (s.aid === a.id) s.aid = ''; });
+    } else {
+      if (!await confirmBox(t('Cancel this appointment?') + '\n' + line, { ok: t('Cancel appointment') })) return;
+      a.status = 'cancelled'; dropNoShow(a);
+    }
+    save(); refresh(); toast(t('Done'));
+  };
+  if (list.length === 1) { doIt(list[0]); return; }
+  const html = `<p><b>${esc(t('Which appointment?'))}</b></p><div class="stack">${list.slice(0, 10).map(a => `<button class="btn" data-a="${esc(a.id)}">${esc(fmtDate(a.date))} · ${esc(a.time)}</button>`).join('')}</div>`;
+  openSheet(t('Voice command'), html, el => $$('[data-a]', el).forEach(b => b.onclick = () => { closeOverlay(el); doIt(db.appointments.find(x => x.id === b.dataset.a)); }));
 }

@@ -123,3 +123,6 @@ table.mini{width:100%;border-collapse:collapse;font-size:14px;margin:6px 0 10px}
 .lock .link{color:#fff;font-size:15px;font-weight:500;opacity:.9}
 #toast{position:fixed;left:50%;bottom:calc(90px + var(--safe-b));transform:translate(-50%,20px);max-width:88%;background:#26363a;color:#fff;padding:10px 16px;border-radius:12px;font-size:15px;opacity:0;pointer-events:none;transition:.2s;z-index:400;text-align:center}
 #toast.show{opacity:1;transform:translate(-50%,0)}
+.vex{margin:4px 0 10px;padding-left:18px;font-size:14px}.vex li{margin:2px 0}
+.dialog p{white-space:pre-line}
+#vcmd{margin:0 0 10px}

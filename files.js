@@ -116,7 +116,7 @@ const XLSX_MIME = 'application/vnd.openxmlformats-officedocument.spreadsheetml.s
 function patientRows() {
   return sortedPatients().map(p => ({
     [t('First name')]: p.first || '', [t('Last name')]: p.last || '', [t('Phone')]: p.phone || '', [t('Date of birth')]: p.dob || '',
-    [t('Email')]: p.email || '', [t('Address')]: p.address || '', [t('Emergency contact')]: p.emergency || '',
+    [t('Email')]: p.email || '', [t('Address')]: p.address || '', [t('Emergency contact')]: p.emergency || '', [t('Patient fee')]: (p.fee !== '' && p.fee != null) ? p.fee : '',
     [t('Medical history')]: p.history || '', [t('General notes')]: p.notes || '', [t('File opened')]: p.created || '',
     [t('Status')]: p.status === 'archived' ? t('Archived') : t('Active'), [t('Balance')]: balanceOf(p.id)
   }));
@@ -140,8 +140,8 @@ function exportPatientsCsv() {
 }
 function downloadTemplate() {
   if (typeof XLSX === 'undefined') { toast(t('Excel library not loaded')); return; }
-  const head = [t('First name'), t('Last name'), t('Phone'), t('Date of birth'), t('Email'), t('Address'), t('Emergency contact'), t('Medical history'), t('General notes')];
-  const ex = ['Marie', 'Khoury', '03 123 456', '1990-04-12', 'marie@example.com', '', '', '', ''];
+  const head = [t('First name'), t('Last name'), t('Phone'), t('Date of birth'), t('Email'), t('Address'), t('Emergency contact'), t('Medical history'), t('General notes'), t('Patient fee')];
+  const ex = ['Marie', 'Khoury', '03 123 456', '1990-04-12', 'marie@example.com', '', '', '', '', ''];
   const ws = XLSX.utils.aoa_to_sheet([head, ex]);
   const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, t('Patients'));
   saveFile(`${slug(t('Import template'))}.xlsx`, new Blob([XLSX.write(wb, { bookType: 'xlsx', type: 'array' })], { type: XLSX_MIME }));
@@ -276,6 +276,7 @@ const HDR = {
   email: ['email', 'mail', 'courriel', 'emailaddress', 'adresseemail'],
   address: ['address', 'adresse'],
   emergency: ['emergency', 'emergencycontact', 'contactdurgence', 'urgence', 'contacturgence'],
+  fee: ['fee', 'patientfee', 'honoraires', 'tarif', 'prix', 'price', 'rate'],
   history: ['history', 'medicalhistory', 'antecedents', 'antecedentsmedicaux', 'atcd'],
   notes: ['notes', 'note', 'remarques', 'remarque', 'commentaires', 'comment', 'generalnotes', 'notesgenerales'],
   created: ['created', 'fileopened', 'dateouverture', 'datecreation', 'firstvisit', 'premierevisite', 'since', 'ouvertureduvdossier']
@@ -301,7 +302,7 @@ function rowsToPatients(aoa) {
     out.push({
       id: uid(), first, last, phone, dob: parseDateAny(get(r, 'dob')), email: cellStr(get(r, 'email')), address: cellStr(get(r, 'address')),
       emergency: cellStr(get(r, 'emergency')), history: cellStr(get(r, 'history')), notes: cellStr(get(r, 'notes')),
-      status: 'active', created: parseDateAny(get(r, 'created')) || todayStr()
+      fee: (v => v === '' || v == null || !isFinite(parseFloat(String(v).replace(',', '.'))) ? '' : parseFloat(String(v).replace(',', '.')))(get(r, 'fee')), status: 'active', created: parseDateAny(get(r, 'created')) || todayStr()
     });
   });
   return { patients: out, blank };

@@ -135,7 +135,7 @@ function registerSW() {
 /* ===================== boot ===================== */
 function boot() {
   LANG = db.settings.lang || 'fr'; document.documentElement.lang = LANG;
-  $('#btnLock').innerHTML = icon('lock', 22); $('#btnSettings').innerHTML = icon('sliders', 22); $('#fab').innerHTML = icon('plus', 26);
+  $('#btnVoice').innerHTML = icon('mic', 22); $('#btnVoice').onclick = openVoice; $('#btnLock').innerHTML = icon('lock', 22); $('#btnSettings').innerHTML = icon('sliders', 22); $('#fab').innerHTML = icon('plus', 26);
   $('#btnLock').onclick = () => lockScreen();
   $('#btnSettings').onclick = openSettings;
   lockScreen(); setupBack(); registerSW();
