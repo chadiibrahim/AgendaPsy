@@ -295,7 +295,7 @@ function wirePatientSearch(f, el) {
 function apptForm(o = {}) {
   const a = o.id ? db.appointments.find(x => x.id === o.id) : null;
   if (!a && !db.patients.length) { toast(t('Add a patient first')); return; }
-  const v = a || { pid: o.pid || '', date: o.date || todayStr(), time: o.time || '10:00', dur: db.settings.dur, fee: o.pid ? lastFeeOf(o.pid) : num(db.settings.fee), status: 'scheduled', note: '' };
+  const v = a ? { ...a, ...(o.ov || {}) } : { pid: o.pid || '', date: o.date || todayStr(), time: o.time || '10:00', dur: db.settings.dur, fee: o.pid ? lastFeeOf(o.pid) : num(db.settings.fee), status: 'scheduled', note: '' };
   const html = `<form id="f" autocomplete="off">
     ${patientSearchHtml()}${fld(t('Patient'), sel('pid', patientOptions(v.pid), v.pid, 'required'))}
     <div class="grid2">${fld(t('Date'), inp('date', v.date, 'type="date" required'))}${fld(t('Time'), inp('time', v.time, 'type="time" required'))}</div>
@@ -398,7 +398,7 @@ function paymentForm(o = {}) {
   const x = o.id ? db.payments.find(p => p.id === o.id) : null;
   if (!x && !db.patients.length) { toast(t('Add a patient first')); return; }
   const pid0 = x ? x.pid : (o.pid || '');
-  const v = x || { pid: pid0, date: todayStr(), amount: pid0 && balanceOf(pid0) > 0 ? balanceOf(pid0) : '', method: 'cash', note: '' };
+  const v = x ? { ...x, ...(o.ov || {}) } : { pid: pid0, date: o.date || todayStr(), amount: o.amount ? o.amount : (pid0 && balanceOf(pid0) > 0 ? balanceOf(pid0) : ''), method: o.method || 'cash', note: '' };
   const html = `<form id="f" autocomplete="off">
     ${patientSearchHtml()}${fld(t('Patient'), sel('pid', patientOptions(v.pid), v.pid, 'required'))}
     <div class="grid2">${fld(t('Date'), inp('date', v.date, 'type="date" required'))}${fld(t('Amount'), inp('amount', v.amount, 'type="number" step="any" inputmode="decimal" required'))}</div>
@@ -408,7 +408,7 @@ function paymentForm(o = {}) {
   openSheet(x ? t('Edit payment') : t('New payment'), html, el => {
     const f = $('#f', el);
     wirePatientSearch(f, el);
-    if (!x) f.pid.onchange = () => { const b = f.pid.value ? balanceOf(f.pid.value) : 0; f.amount.value = b > 0 ? b : ''; };
+    if (!x) f.pid.onchange = () => { if (o.amount) return; const b = f.pid.value ? balanceOf(f.pid.value) : 0; f.amount.value = b > 0 ? b : ''; };
     $('[data-cancel]', el).onclick = () => closeOverlay(el);
     const del = $('[data-del]', el);
     if (del) del.onclick = async () => { if (!await confirmBox(t('Delete this payment?'))) return; db.payments = db.payments.filter(p => p.id !== x.id); save(); closeOverlay(el); refresh(); };
@@ -442,6 +442,10 @@ function openSettings() {
           ${fld(t('Auto-lock'), sel('autoLock', [[0, t('Immediately')], [30, t('After 30 seconds')], [120, t('After 2 minutes')], [300, t('After 5 minutes')]], s.autoLock))}
           <div class="grid2"><button class="btn" data-pin>${esc(t('Change PIN'))}</button><button class="btn" data-lock>${icon('lock', 18)} ${esc(t('Lock now'))}</button></div>
         </section>
+        ${isNative() ? '' : `<section class="card pad" id="stg"><h3>${esc(t('Storage protection'))}</h3>
+          <p id="stgmsg" class="muted">…</p><p id="stguse" class="muted small"></p>
+          <button class="btn" data-persist hidden>${esc(t('Request protection'))}</button>
+        </section>`}
         <section class="card pad"><h3>${esc(t('Backup'))}</h3>
           <p class="muted">${esc(t('Your data lives only on this phone. Back it up regularly and keep the file somewhere safe: it is not encrypted.'))}<br>${esc(t('Last backup:'))} <b>${esc(lb)}</b></p>
           ${fld(t('Backup reminder'), sel('backupDays', [[0, t('Never')], [7, t('Every week')], [14, t('Every 2 weeks')], [30, t('Every month')]], s.backupDays))}
@@ -466,6 +470,7 @@ function openSettings() {
     });
     $('[data-pin]', el).onclick = changePinSheet;
     $('[data-lock]', el).onclick = () => lockScreen();
+    storageStatus(el);
     $('[data-bk]', el).onclick = () => runBackup('share');
     $('[data-bks]', el).onclick = () => runBackup('save');
     $('[data-rs]', el).onclick = () => pickFile('.json,.txt,application/json,text/plain', restoreBackup);
@@ -516,36 +521,58 @@ const lev = (a, b) => { const d = Array.from({ length: a.length + 1 }, (_, i) =>
 
 function parseVoice(raw, today) {
   today = today || todayStr();
-  let s = ' ' + normStr(raw).replace(/[’'`-]/g, ' ').replace(/[,;!?]/g, ' ').replace(/\.(?!\d)/g, ' ') + ' ';
+  let s = ' ' + normStr(raw).replace(/[’'`-]/g, ' ').replace(/[;!?]/g, ' ').replace(/,(?!\d)/g, ' ').replace(/\.(?!\d)/g, ' ') + ' ';
   s = s.replace(/\b([a-z]+)\s+(heures?|h|pm|am)\b/g, (m, w, u) => VNUM[w] ? VNUM[w] + ' ' + u : m);
-  const out = { norm: s, intent: 'create', date: '', time: '' };
-  if (/\b(supprim|efface|enleve|retire|delete|remove)\w*/.test(s)) out.intent = 'delete';
-  else if (/\b(annul|cancel)\w*/.test(s)) out.intent = 'cancel';
-  const wd = (today && parseYmd(today).getDay());
-  let m, rest = s;
+  const out = { norm: s, entity: 'appt', action: 'create', last: false, dates: [], times: [], amounts: [], method: '', date: '', time: '' };
+  if (/\b(paiements?|payes?|payee?s?|payer|regle|reglement|versements?|verse|encaisse\w*|payments?|paid|pay)\b/.test(s)) out.entity = 'pay';
+  if (/\b(supprim|efface|enleve|retire|delete|remove)\w*/.test(s)) out.action = 'delete';
+  else if (/\b(annul|cancel)\w*/.test(s)) out.action = out.entity === 'pay' ? 'delete' : 'cancel';
+  else if (/\b(modifi|chang|deplac|decal|report|reschedul|move|updat|edit|corrig|ajust|rectifi)\w*/.test(s)) out.action = 'modify';
+  out.last = /\b(dernier|derniere|last|latest|most recent)\b/.test(s);
+  const wd = parseYmd(today).getDay();
   const mons = Object.keys(VMONTHS).join('|'), days = Object.keys(VDAYS).join('|');
-  const yearFix = (y, mo, d, future) => { let dt = `${y}-${pad(mo)}-${pad(d)}`; if (future && dt < today) dt = `${y + 1}-${pad(mo)}-${pad(d)}`; return dt; };
-  const cy = +today.slice(0, 4), cm = +today.slice(5, 7), cd = +today.slice(8, 10), fut = out.intent === 'create';
-  if (/\bapres demain\b|\bday after tomorrow\b/.test(s)) out.date = addDays(today, 2);
-  else if (/\bdemain\b|\btomorrow\b/.test(s)) out.date = addDays(today, 1);
-  else if (/\baujourd hui\b|\btoday\b|\bce jour\b/.test(s)) out.date = today;
-  else if ((m = s.match(/\b(?:dans|in)\s+(\d+)\s+(jours?|semaines?|days?|weeks?)\b/))) out.date = addDays(today, +m[1] * (/^(s|w)/.test(m[2]) ? 7 : 1));
-  else if ((m = s.match(new RegExp('\\b(\\d{1,2})\\s*(?:er|st|nd|rd|th)?\\s+(?:de\\s+|of\\s+)?(' + mons + ')\\b(?:\\s+(\\d{4}))?')))) out.date = yearFix(+m[3] || cy, VMONTHS[m[2]], +m[1], fut && !m[3]);
-  else if ((m = s.match(new RegExp('\\b(' + mons + ')\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:\\s+(\\d{4}))?')))) out.date = yearFix(+m[3] || cy, VMONTHS[m[1]], +m[2], fut && !m[3]);
-  else if ((m = s.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/))) { let y = m[3] ? (+m[3] < 100 ? 2000 + +m[3] : +m[3]) : cy; out.date = yearFix(y, +m[2], +m[1], fut && !m[3]); }
-  else if ((m = s.match(/\b(?:le|the)\s+(\d{1,2})(?:er|st|nd|rd|th)?\b(?!\s*(?:h\b|heures?|:|am|pm))/)) && +m[1] >= 1 && +m[1] <= 31) { let mo = cm, y = cy; if (+m[1] < cd) { mo++; if (mo > 12) { mo = 1; y++; } } out.date = `${y}-${pad(mo)}-${pad(+m[1])}`; }
-  else if ((m = s.match(new RegExp('\\b(' + days + ')\\b')))) { let diff = (VDAYS[m[1]] - wd + 7) % 7; if (diff === 0) diff = 7; out.date = addDays(today, diff); }
-  if (out.date && isNaN(parseYmd(out.date).getTime())) out.date = '';
-  let h = null, mi = 0, mer = '';
-  if ((m = s.match(/\b(\d{1,2})\s*(?:h|heures?|:)\s*(\d{2})?\s*(am|pm)?(?![a-z])/))) { h = +m[1]; mi = +m[2] || 0; mer = m[3] || ''; }
-  else if ((m = s.match(/\b(\d{1,2})\s*(am|pm)\b/))) { h = +m[1]; mer = m[2]; }
-  else if (/\bmidi\b|\bnoon\b/.test(s)) { h = 12; mer = 'x'; }
-  if (h !== null) {
-    if (!mi && /\bet demie?\b|\bhalf past\b/.test(s)) mi = 30; else if (!mi && /\bet quart\b|\bquarter past\b/.test(s)) mi = 15;
+  const cy = +today.slice(0, 4), cm = +today.slice(5, 7), cd = +today.slice(8, 10), fut = out.action === 'create';
+  const yearFix = (y, mo, d, f) => { let dt = `${y}-${pad(mo)}-${pad(d)}`; if (f && dt < today) dt = `${y + 1}-${pad(mo)}-${pad(d)}`; return dt; };
+  const findDate = str => {
+    let m;
+    const R = (re, fn) => { const mm = str.match(re); return mm ? { date: fn(mm), idx: mm.index, len: mm[0].length } : null; };
+    return R(/\bavant hier\b|\bday before yesterday\b/, () => addDays(today, -2))
+      || R(/\bhier\b|\byesterday\b/, () => addDays(today, -1))
+      || R(/\bapres demain\b|\bday after tomorrow\b/, () => addDays(today, 2))
+      || R(/\bdemain\b|\btomorrow\b/, () => addDays(today, 1))
+      || R(/\baujourd hui\b|\btoday\b|\bce jour\b/, () => today)
+      || R(/\b(?:dans|in)\s+(\d+)\s+(jours?|semaines?|days?|weeks?)\b/, mm => addDays(today, +mm[1] * (/^(s|w)/.test(mm[2]) ? 7 : 1)))
+      || R(new RegExp('\\b(\\d{1,2})\\s*(?:er|st|nd|rd|th)?\\s+(?:de\\s+|of\\s+)?(' + mons + ')\\b(?:\\s+(\\d{4}))?'), mm => yearFix(+mm[3] || cy, VMONTHS[mm[2]], +mm[1], fut && !mm[3]))
+      || R(new RegExp('\\b(' + mons + ')\\s+(\\d{1,2})(?:st|nd|rd|th)?\\b(?:\\s+(\\d{4}))?'), mm => yearFix(+mm[3] || cy, VMONTHS[mm[1]], +mm[2], fut && !mm[3]))
+      || R(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/, mm => yearFix(mm[3] ? (+mm[3] < 100 ? 2000 + +mm[3] : +mm[3]) : cy, +mm[2], +mm[1], fut && !mm[3]))
+      || ((m = str.match(/\b(?:le|the)\s+(\d{1,2})(?:er|st|nd|rd|th)?\b(?!\s*(?:h\b|heures?|:|am|pm))/)) && +m[1] >= 1 && +m[1] <= 31
+        ? (() => { let mo = cm, y = cy; if (+m[1] < cd) { mo++; if (mo > 12) { mo = 1; y++; } } return { date: `${y}-${pad(mo)}-${pad(+m[1])}`, idx: m.index, len: m[0].length }; })() : null)
+      || R(new RegExp('\\b(' + days + ')\\b'), mm => { let diff = (VDAYS[mm[1]] - wd + 7) % 7; if (diff === 0) diff = 7; return addDays(today, diff); });
+  };
+  const findTime = str => {
+    let m, h = null, mi = 0, mer = '', idx, len;
+    if ((m = str.match(/\b(\d{1,2})\s*(?:h|heures?|:)\s*(\d{2})?\s*(am|pm)?(?![a-z])/))) { h = +m[1]; mi = +m[2] || 0; mer = m[3] || ''; }
+    else if ((m = str.match(/\b(\d{1,2})\s*(am|pm)\b/))) { h = +m[1]; mer = m[2]; }
+    else if ((m = str.match(/\bmidi\b|\bnoon\b/))) { h = 12; mer = 'x'; }
+    if (h === null) return null;
+    idx = m.index; len = m[0].length;
     if (mer === 'pm' && h < 12) h += 12; else if (mer === 'am' && h === 12) h = 0;
     else if (!mer) { if (/\b(apres midi|soir|afternoon|evening|tonight)\b/.test(s) && h < 12) h += 12; else if (h >= 1 && h <= 7 && !/\b(matin|morning)\b/.test(s)) h += 12; }
-    if (h < 24 && mi < 60) out.time = `${pad(h)}:${pad(mi)}`;
+    if (h >= 24 || mi >= 60) return { time: '', idx, len };
+    return { time: `${pad(h)}:${pad(mi)}`, idx, len, mi0: !m[2] };
+  };
+  const blank = (str, o) => str.slice(0, o.idx) + ' '.repeat(o.len) + str.slice(o.idx + o.len);
+  let rest = s, ds = [], ts = [];
+  for (let i = 0; i < 2; i++) { const d = findDate(rest); if (!d || isNaN(parseYmd(d.date).getTime())) break; ds.push(d); rest = blank(rest, d); }
+  for (let i = 0; i < 2; i++) { const t0 = findTime(rest); if (!t0) break; if (t0.time) ts.push(t0); rest = blank(rest, t0); }
+  ds.sort((x, y) => x.idx - y.idx); ts.sort((x, y) => x.idx - y.idx);
+  out.dates = ds.map(x => x.date); out.times = ts.map(x => x.time);
+  if (out.times.length === 1 && ts[0].mi0) {
+    if (/\bet demie?\b|\bhalf past\b/.test(s)) out.times[0] = out.times[0].slice(0, 3) + '30'; else if (/\bet quart\b|\bquarter past\b/.test(s)) out.times[0] = out.times[0].slice(0, 3) + '15';
   }
+  out.date = out.dates[0] || ''; out.time = out.times[0] || '';
+  if (out.entity === 'pay') out.amounts = [...rest.matchAll(/(\d+(?:[.,]\d+)?)/g)].map(m => parseFloat(m[1].replace(',', '.'))).filter(n => n > 0);
+  out.method = /\b(especes?|cash|liquide)\b/.test(s) ? 'cash' : /\b(carte|card)\b/.test(s) ? 'card' : /\b(virement|transfer|wire)\b/.test(s) ? 'transfer' : '';
   return out;
 }
 function matchPatients(norm) {
@@ -561,7 +588,7 @@ function matchPatients(norm) {
 }
 function openVoice() {
   const html = `<p class="muted">${esc(t('Tap the microphone on your keyboard, speak, then press Run. You always confirm before anything is saved or deleted.'))}</p>
-    <ul class="muted vex"><li>${esc(t('“Appointment with Marie Khoury next Tuesday at 3 pm”'))}</li><li>${esc(t('“Delete Karim’s appointment tomorrow”'))}</li><li>${esc(t('“Cancel Nour on the 14th at 10:30”'))}</li></ul>
+    <ul class="muted vex"><li>${esc(t('“Appointment with Marie Khoury next Tuesday at 3 pm”'))}</li><li>${esc(t('“Move Karim’s appointment from tomorrow to Friday at 4 pm”'))}</li><li>${esc(t('“Cancel Nour on the 14th at 10:30”'))}</li><li>${esc(t('“Marie Khoury paid 80 in cash”'))}</li><li>${esc(t('“Change Karim’s last payment to 60”'))}</li><li>${esc(t('“Delete Marie’s last payment”'))}</li></ul>
     <textarea id="vcmd" rows="3" placeholder="${esc(t('Say or type a command…'))}" autocapitalize="sentences"></textarea>
     <div id="vres"></div>
     <div class="row end"><button class="btn primary" id="vrun">${esc(t('Run'))}</button></div>`;
@@ -572,21 +599,57 @@ function openVoice() {
       const txt = box.value.trim(); if (!txt) return;
       const r = parseVoice(txt), c = matchPatients(r.norm);
       const act = pid => { closeOverlay(el); voiceAct(r, pid); };
+      const hasFilter = r.dates.length || r.times.length || r.last || r.amounts.length;
       if (c.length === 1) act(c[0].id);
       else if (c.length > 1) { res.innerHTML = `<p><b>${esc(t('Which patient?'))}</b></p><div class="stack">${c.slice(0, 8).map(p => `<button class="btn" data-pid="${esc(p.id)}">${esc(pname(p))}</button>`).join('')}</div>`; $$('[data-pid]', res).forEach(b => b.onclick = () => act(b.dataset.pid)); }
-      else if (r.intent === 'create') { closeOverlay(el); toast(t('Patient not recognised. Choose one.')); apptForm({ date: r.date || undefined, time: r.time || undefined }); }
+      else if (r.action === 'create') { closeOverlay(el); toast(t('Patient not recognised. Choose one.')); voiceAct(r, ''); }
+      else if (hasFilter) act(null);
       else res.innerHTML = `<p class="muted">${esc(t('Patient not recognised. Choose one.'))}</p>`;
     };
   });
 }
+/* pick one of several items, then continue */
+function voicePick(items, label, next) {
+  if (!items.length) { toast(t('Nothing matches')); return; }
+  if (items.length === 1) { next(items[0]); return; }
+  const html = `<p><b>${esc(t('Which one?'))}</b></p><div class="stack">${items.slice(0, 10).map((x, i) => `<button class="btn" data-i="${i}">${esc(label(x))}</button>`).join('')}</div>`;
+  openSheet(t('Voice command'), html, el => $$('[data-i]', el).forEach(b => b.onclick = () => { closeOverlay(el); next(items[+b.dataset.i]); }));
+}
 function voiceAct(r, pid) {
-  if (r.intent === 'create') { apptForm({ pid, date: r.date || undefined, time: r.time || undefined }); return; }
-  const td = todayStr();
-  const list = db.appointments.filter(a => a.pid === pid && (r.date ? a.date === r.date : a.date >= td) && (!r.time || a.time === r.time) && (r.intent === 'delete' || a.status !== 'cancelled')).sort(byDateTime);
-  if (!list.length) { toast(t('No matching appointment')); return; }
-  const doIt = async a => {
+  const td = todayStr(), mine = x => !pid || x.pid === pid;
+  const who = x => (pid ? '' : pname(P(x.pid)) + ' · ');
+  if (r.entity === 'pay') {
+    if (r.action === 'create') { paymentForm({ pid: pid || undefined, amount: r.amounts[0], date: r.dates[0], method: r.method || undefined }); return; }
+    let srcDate = '', newDate = '', srcAmt = 0, newAmt = 0;
+    if (r.action === 'modify') {
+      if (r.dates.length >= 2) { srcDate = r.dates[0]; newDate = r.dates[1]; } else if (r.dates.length === 1) { if (/\bdate\b/.test(r.norm)) newDate = r.dates[0]; else srcDate = r.dates[0]; }
+      if (r.amounts.length >= 2) { srcAmt = r.amounts[0]; newAmt = r.amounts[1]; } else newAmt = r.amounts[0] || 0;
+    } else { srcDate = r.dates[0] || ''; srcAmt = r.amounts[0] || 0; }
+    let list = db.payments.filter(x => mine(x) && (!srcDate || x.date === srcDate) && (!srcAmt || Math.abs(num(x.amount) - srcAmt) < 0.005)).sort((a, b) => b.date.localeCompare(a.date));
+    if (r.last || (r.action === 'modify' && !srcDate && !srcAmt)) list = list.slice(0, 1);
+    const line = x => `${who(x)}${fmtDateS(x.date)} · ${money(x.amount)}${x.method ? ' · ' + methodLabel(x.method) : ''}`;
+    voicePick(list.length > 10 ? list.slice(0, 10) : list, line, async x => {
+      if (r.action === 'delete') {
+        if (!await confirmBox(t('Delete this payment?') + '\n' + pname(P(x.pid)) + ' · ' + fmtDateS(x.date) + ' · ' + money(x.amount))) return;
+        db.payments = db.payments.filter(p => p.id !== x.id); save(); refresh(); toast(t('Done'));
+      } else paymentForm({ id: x.id, ov: { ...(newAmt ? { amount: newAmt } : {}), ...(newDate ? { date: newDate } : {}), ...(r.method ? { method: r.method } : {}) } });
+    });
+    return;
+  }
+  if (r.action === 'create') { apptForm({ pid: pid || undefined, date: r.dates[0] || undefined, time: r.times[0] || undefined }); return; }
+  if (r.action === 'modify') {
+    const ds = r.dates, ts = r.times; let srcDate = '', tgtDate = '', srcTime = '', tgtTime = '';
+    if (ds.length >= 2) { srcDate = ds[0]; tgtDate = ds[1]; } else if (ds.length === 1) { if (/\b(heure|time)\b/.test(r.norm)) srcDate = ds[0]; else tgtDate = ds[0]; }
+    if (ts.length >= 2) { srcTime = ts[0]; tgtTime = ts[1]; } else if (ts.length === 1) tgtTime = ts[0];
+    if (!tgtDate && !tgtTime) { toast(t('Say the new date or time')); return; }
+    const list = db.appointments.filter(a => mine(a) && (srcDate ? a.date === srcDate : (a.date >= td && a.status === 'scheduled')) && (!srcTime || a.time === srcTime)).sort(byDateTime);
+    voicePick(list, a => `${who(a)}${fmtDate(a.date)} · ${a.time}`, a => apptForm({ id: a.id, ov: { date: tgtDate || a.date, time: tgtTime || a.time } }));
+    return;
+  }
+  const list = db.appointments.filter(a => mine(a) && (r.dates[0] ? a.date === r.dates[0] : a.date >= td) && (!r.times[0] || a.time === r.times[0]) && (r.action === 'delete' || a.status !== 'cancelled')).sort(byDateTime);
+  voicePick(r.last ? list.slice(-1) : list, a => `${who(a)}${fmtDate(a.date)} · ${a.time}`, async a => {
     const line = `${pname(P(a.pid))} · ${fmtDate(a.date)} · ${a.time}`;
-    if (r.intent === 'delete') {
+    if (r.action === 'delete') {
       if (!await confirmBox(t('Delete this appointment?') + '\n' + line)) return;
       db.appointments = db.appointments.filter(x => x.id !== a.id); dropNoShow(a); db.sessions.forEach(s => { if (s.aid === a.id) s.aid = ''; });
     } else {
@@ -594,8 +657,21 @@ function voiceAct(r, pid) {
       a.status = 'cancelled'; dropNoShow(a);
     }
     save(); refresh(); toast(t('Done'));
-  };
-  if (list.length === 1) { doIt(list[0]); return; }
-  const html = `<p><b>${esc(t('Which appointment?'))}</b></p><div class="stack">${list.slice(0, 10).map(a => `<button class="btn" data-a="${esc(a.id)}">${esc(fmtDate(a.date))} · ${esc(a.time)}</button>`).join('')}</div>`;
-  openSheet(t('Voice command'), html, el => $$('[data-a]', el).forEach(b => b.onclick = () => { closeOverlay(el); doIt(db.appointments.find(x => x.id === b.dataset.a)); }));
+  });
+}
+
+/* ===================== STORAGE PROTECTION ===================== */
+async function storageStatus(el, tried) {
+  const box = $('#stg', el); if (!box) return;
+  const msg = $('#stgmsg', box), use = $('#stguse', box), btn = $('[data-persist]', box);
+  const S0 = navigator.storage;
+  if (!S0 || !S0.persisted) { msg.textContent = t('This browser cannot protect storage. Make regular backups.'); btn.hidden = true; return; }
+  let on = false; try { on = await S0.persisted(); } catch (e) { }
+  if (on) { msg.innerHTML = '<b style="color:var(--brand)">✓ ' + esc(t('Protection on')) + '</b> · ' + esc(t('The browser will not erase your data automatically.')); btn.hidden = true; }
+  else {
+    msg.innerHTML = '<b style="color:#b45309">' + esc(t('Not active')) + '</b> · ' + esc(tried ? t('The browser refused. Install the app on the home screen and use it regularly, and keep making backups.') : t('The browser could erase your data if the phone runs low on space.'));
+    btn.hidden = !S0.persist;
+    btn.onclick = async () => { btn.disabled = true; try { await S0.persist(); } catch (e) { } btn.disabled = false; storageStatus(el, true); };
+  }
+  try { if (S0.estimate) { const e = await S0.estimate(); if (e && e.usage != null) use.textContent = t('Space used by the app: {0}', e.usage < 1048576 ? Math.max(1, Math.round(e.usage / 1024)) + ' KB' : (e.usage / 1048576).toFixed(1) + ' MB'); } } catch (e) { }
 }
